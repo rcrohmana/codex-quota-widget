@@ -1,0 +1,28 @@
+{
+  "name": "codex-quota-widget",
+  "version": "0.1.0",
+  "description": "Pi extension that displays Codex/ChatGPT usage quota windows in the editor UI.",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.ts",
+  "files": [
+    "*.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "codex",
+    "quota",
+    "widget"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  }
+}
