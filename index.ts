@@ -12,6 +12,8 @@ import type { CodexQuotaSnapshot } from "./types.ts";
 
 const WIDGET_ID = "codex-quota";
 const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
+const CACHE_TTL_MS = 60_000;
+const POST_RESPONSE_REFRESH_DELAY_MS = 5_000;
 
 export function getActiveSnapshot(
   cache: Map<string, CodexQuotaSnapshot>,
@@ -19,6 +21,14 @@ export function getActiveSnapshot(
 ): CodexQuotaSnapshot | null {
   if (!providerId) return null;
   return cache.get(providerId) ?? null;
+}
+
+export function shouldRefreshSnapshot(
+  snapshot: CodexQuotaSnapshot | undefined,
+  now = Date.now(),
+  ttlMs = CACHE_TTL_MS,
+): boolean {
+  return !snapshot || now - snapshot.fetchedAt >= ttlMs;
 }
 
 function mergeSnapshots(
@@ -45,6 +55,7 @@ function getAuthFilePath(): string {
 
 export default function codexQuotaWidget(pi: ExtensionAPI) {
   const cache = new Map<string, CodexQuotaSnapshot>();
+  const pendingRefreshes = new Map<string, ReturnType<typeof setTimeout>>();
   let activeProviderId: string | undefined;
 
   async function fetchUsage(providerId: string): Promise<CodexQuotaSnapshot | null> {
@@ -94,6 +105,20 @@ export default function codexQuotaWidget(pi: ExtensionAPI) {
     showWidget(ctx);
   }
 
+  function scheduleRefreshFromUsage(
+    providerId: string,
+    ctx: ExtensionContext,
+    delayMs = POST_RESPONSE_REFRESH_DELAY_MS,
+  ) {
+    if (pendingRefreshes.has(providerId)) return;
+
+    const timeout = setTimeout(() => {
+      pendingRefreshes.delete(providerId);
+      void refreshFromUsage(providerId, ctx);
+    }, delayMs);
+    pendingRefreshes.set(providerId, timeout);
+  }
+
   pi.on("session_start", async (_event, ctx) => {
     if (!isCodexProviderModel(ctx.model)) {
       activeProviderId = undefined;
@@ -104,7 +129,7 @@ export default function codexQuotaWidget(pi: ExtensionAPI) {
     activeProviderId = ctx.model?.provider;
     showWidget(ctx);
 
-    if (activeProviderId && !cache.has(activeProviderId)) {
+    if (activeProviderId && shouldRefreshSnapshot(cache.get(activeProviderId))) {
       await refreshFromUsage(activeProviderId, ctx);
     }
   });
@@ -119,7 +144,7 @@ export default function codexQuotaWidget(pi: ExtensionAPI) {
     activeProviderId = event.model.provider;
     showWidget(ctx);
 
-    if (!cache.has(activeProviderId)) {
+    if (shouldRefreshSnapshot(cache.get(activeProviderId))) {
       await refreshFromUsage(activeProviderId, ctx);
     }
   });
@@ -131,9 +156,20 @@ export default function codexQuotaWidget(pi: ExtensionAPI) {
       activeProviderId,
       Date.now(),
     );
-    if (!parsed) return;
+    if (!parsed) {
+      scheduleRefreshFromUsage(activeProviderId, ctx);
+      return;
+    }
     cache.set(activeProviderId, mergeSnapshots(cache.get(activeProviderId), parsed));
     showWidget(ctx);
+    scheduleRefreshFromUsage(activeProviderId, ctx);
+  });
+
+  pi.on("session_shutdown", () => {
+    for (const timeout of pendingRefreshes.values()) {
+      clearTimeout(timeout);
+    }
+    pendingRefreshes.clear();
   });
 
   pi.registerCommand("codex-quota", {

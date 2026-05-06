@@ -37,13 +37,20 @@ function makeBar(percent: number | null | undefined, width: number): string {
   return FILLED.repeat(filled) + EMPTY.repeat(Math.max(0, width - filled));
 }
 
-function formatMeta(window: QuotaWindow | null): string {
+function getRemainingSeconds(window: QuotaWindow, now: number): number | null {
+  if (typeof window.resetAt === "number") {
+    return Math.max(0, window.resetAt - Math.floor(now / 1000));
+  }
+  return window.resetAfterSeconds;
+}
+
+function formatMeta(window: QuotaWindow | null, now: number): string {
   if (!window) {
     return "--";
   }
 
   const percent = clampPercent(window.usedPercent);
-  const time = formatRemainingTime(window.resetAfterSeconds, window.kind);
+  const time = formatRemainingTime(getRemainingSeconds(window, now), window.kind);
   return `${percent}%(${time})`;
 }
 
@@ -59,9 +66,10 @@ function buildSingleRow(
   weeklyWindow: QuotaWindow | null,
   width: number,
   separator: string,
+  now: number,
 ): string {
-  const shortMeta = formatMeta(shortWindow);
-  const weeklyMeta = formatMeta(weeklyWindow);
+  const shortMeta = formatMeta(shortWindow, now);
+  const weeklyMeta = formatMeta(weeklyWindow, now);
   const fixedWidth = `h:${shortMeta}${separator}w:${weeklyMeta}`.length + 2;
   const remaining = Math.max(0, width - fixedWidth);
   const [shortBarWidth, weeklyBarWidth] = allocateBars(remaining);
@@ -75,15 +83,16 @@ function buildSingleRow(
 export function renderQuotaWidget(
   snapshot: CodexQuotaSnapshot | null,
   width: number,
+  now = Date.now(),
 ): string[] {
   const appliedMargin = width >= COMPACT_RENDER_THRESHOLD ? RENDER_SAFETY_MARGIN : 4;
   const safeWidth = Math.max(24, width - appliedMargin);
   const shortWindow = snapshot?.shortWindow ?? null;
   const weeklyWindow = snapshot?.weeklyWindow ?? null;
 
-  let line = buildSingleRow(shortWindow, weeklyWindow, safeWidth, " | ");
+  let line = buildSingleRow(shortWindow, weeklyWindow, safeWidth, " | ", now);
   if (line.length > safeWidth) {
-    line = buildSingleRow(shortWindow, weeklyWindow, safeWidth, "|");
+    line = buildSingleRow(shortWindow, weeklyWindow, safeWidth, "|", now);
   }
 
   if (line.length > safeWidth) {
