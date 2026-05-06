@@ -34,8 +34,8 @@ export function getCodexProviderFromContext(
   activeProviderId: string | undefined,
   ctx: Pick<ExtensionContext, "model">,
 ): string | undefined {
-  if (isCodexProvider(activeProviderId)) return activeProviderId;
-  return isCodexProvider(ctx.model?.provider) ? ctx.model?.provider : undefined;
+  if (isCodexProvider(ctx.model?.provider)) return ctx.model?.provider;
+  return isCodexProvider(activeProviderId) ? activeProviderId : undefined;
 }
 
 export function shouldRefreshUsageAfterActivity(hadCodexActivity: boolean): boolean {
@@ -131,19 +131,28 @@ export default function codexQuotaWidget(pi: ExtensionAPI) {
     }
   });
 
-  pi.on("model_select", async (event, ctx) => {
-    if (!isCodexProvider(event.model.provider)) {
+  async function activateProviderFromContext(ctx: ExtensionContext) {
+    const providerId = getCodexProviderFromContext(undefined, ctx);
+    if (!providerId) {
       activeProviderId = undefined;
       hideWidget(ctx);
       return;
     }
 
-    activeProviderId = event.model.provider;
+    activeProviderId = providerId;
     showWidget(ctx);
 
-    if (shouldRefreshSnapshot(cache.get(activeProviderId))) {
-      await refreshFromUsage(activeProviderId, ctx);
+    if (shouldRefreshSnapshot(cache.get(providerId))) {
+      await refreshFromUsage(providerId, ctx);
     }
+  }
+
+  pi.on("model_select", async (_event, ctx) => {
+    await activateProviderFromContext(ctx);
+  });
+
+  pi.on("before_agent_start", async (_event, ctx) => {
+    await activateProviderFromContext(ctx);
   });
 
   pi.on("after_provider_response", async (event, ctx) => {

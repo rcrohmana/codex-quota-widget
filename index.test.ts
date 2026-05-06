@@ -35,11 +35,15 @@ describe("getCodexProviderFromContext", () => {
     );
   });
 
-  it("prefers the active provider when it is a Codex provider", () => {
+  it("prefers the current context model provider over stale active provider", () => {
     assert.equal(
       getCodexProviderFromContext("openai-codex", { model: { provider: "openai-codex-5" } }),
-      "openai-codex",
+      "openai-codex-5",
     );
+  });
+
+  it("falls back to active provider when context model is unavailable", () => {
+    assert.equal(getCodexProviderFromContext("openai-codex", { model: undefined }), "openai-codex");
   });
 });
 
