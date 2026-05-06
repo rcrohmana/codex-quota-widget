@@ -38,10 +38,7 @@ export function getCodexProviderFromContext(
   return isCodexProvider(ctx.model?.provider) ? ctx.model?.provider : undefined;
 }
 
-export function shouldRefreshUsageAfterActivity(
-  hadCodexActivity: boolean,
-  _sawCodexHeaders: boolean,
-): boolean {
+export function shouldRefreshUsageAfterActivity(hadCodexActivity: boolean): boolean {
   return hadCodexActivity;
 }
 
@@ -71,7 +68,6 @@ export default function codexQuotaWidget(pi: ExtensionAPI) {
   const cache = new Map<string, CodexQuotaSnapshot>();
   let activeProviderId: string | undefined;
   let hadCodexActivity = false;
-  let sawCodexHeaders = false;
 
   async function fetchUsage(providerId: string): Promise<CodexQuotaSnapshot | null> {
     const auth = await readCodexAuthRecord(getAuthFilePath(), providerId);
@@ -164,7 +160,6 @@ export default function codexQuotaWidget(pi: ExtensionAPI) {
     );
     if (!parsed) return;
 
-    sawCodexHeaders = true;
     cache.set(providerId, mergeSnapshots(cache.get(providerId), parsed));
     showWidget(ctx);
   });
@@ -173,10 +168,9 @@ export default function codexQuotaWidget(pi: ExtensionAPI) {
     const providerId = getCodexProviderFromContext(activeProviderId, ctx);
     if (!providerId) return;
 
-    if (!shouldRefreshUsageAfterActivity(hadCodexActivity, sawCodexHeaders)) return;
+    if (!shouldRefreshUsageAfterActivity(hadCodexActivity)) return;
 
     hadCodexActivity = false;
-    sawCodexHeaders = false;
     activeProviderId = providerId;
     await refreshFromUsage(providerId, ctx);
   });

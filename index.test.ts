@@ -44,15 +44,11 @@ describe("getCodexProviderFromContext", () => {
 });
 
 describe("shouldRefreshUsageAfterActivity", () => {
-  it("refreshes after Codex activity when headers were unavailable", () => {
-    assert.equal(shouldRefreshUsageAfterActivity(true, false), true);
-  });
-
-  it("refreshes after Codex activity when headers were parsed", () => {
-    assert.equal(shouldRefreshUsageAfterActivity(true, true), true);
+  it("refreshes after Codex activity", () => {
+    assert.equal(shouldRefreshUsageAfterActivity(true), true);
   });
 
   it("does not refresh when there was no Codex activity", () => {
-    assert.equal(shouldRefreshUsageAfterActivity(false, true), false);
+    assert.equal(shouldRefreshUsageAfterActivity(false), false);
   });
 });
