@@ -11,6 +11,7 @@ function buildWindow(
   usedPercent: string | undefined,
   windowMinutes: string | undefined,
   resetAfterSeconds: string | undefined,
+  resetAtSeconds: string | undefined,
   source: "headers",
   now: number,
 ): QuotaWindow | null {
@@ -23,14 +24,20 @@ function buildWindow(
   if (!kind) return null;
 
   const used = parseNumber(usedPercent);
-  const resetAfter = parseNumber(resetAfterSeconds);
+  const explicitResetAt = parseNumber(resetAtSeconds);
+  const parsedResetAfter = parseNumber(resetAfterSeconds);
+  const resetAfter =
+    parsedResetAfter ??
+    (explicitResetAt === null ? null : Math.max(0, explicitResetAt - Math.floor(now / 1000)));
+  const resetAt =
+    explicitResetAt ?? (resetAfter === null ? null : Math.floor((now + resetAfter * 1000) / 1000));
 
   return {
     kind,
     usedPercent: used,
     windowSeconds,
     resetAfterSeconds: resetAfter,
-    resetAt: resetAfter === null ? null : Math.floor((now + resetAfter * 1000) / 1000),
+    resetAt,
     source,
   };
 }
@@ -44,6 +51,7 @@ export function parseCodexHeaders(
     headers["x-codex-primary-used-percent"],
     headers["x-codex-primary-window-minutes"],
     headers["x-codex-primary-reset-after-seconds"],
+    headers["x-codex-primary-reset-at"],
     "headers",
     now,
   );
@@ -52,6 +60,7 @@ export function parseCodexHeaders(
     headers["x-codex-secondary-used-percent"],
     headers["x-codex-secondary-window-minutes"],
     headers["x-codex-secondary-reset-after-seconds"],
+    headers["x-codex-secondary-reset-at"],
     "headers",
     now,
   );
