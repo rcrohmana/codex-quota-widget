@@ -13,7 +13,6 @@ import type { CodexQuotaSnapshot } from "./types.ts";
 const WIDGET_ID = "codex-quota";
 const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const CACHE_TTL_MS = 60_000;
-const POST_RESPONSE_REFRESH_DELAY_MS = 5_000;
 
 export function getActiveSnapshot(
   cache: Map<string, CodexQuotaSnapshot>,
@@ -29,6 +28,21 @@ export function shouldRefreshSnapshot(
   ttlMs = CACHE_TTL_MS,
 ): boolean {
   return !snapshot || now - snapshot.fetchedAt >= ttlMs;
+}
+
+export function getCodexProviderFromContext(
+  activeProviderId: string | undefined,
+  ctx: Pick<ExtensionContext, "model">,
+): string | undefined {
+  if (isCodexProvider(activeProviderId)) return activeProviderId;
+  return isCodexProvider(ctx.model?.provider) ? ctx.model?.provider : undefined;
+}
+
+export function shouldRefreshUsageAfterActivity(
+  hadCodexActivity: boolean,
+  _sawCodexHeaders: boolean,
+): boolean {
+  return hadCodexActivity;
 }
 
 function mergeSnapshots(
@@ -55,8 +69,9 @@ function getAuthFilePath(): string {
 
 export default function codexQuotaWidget(pi: ExtensionAPI) {
   const cache = new Map<string, CodexQuotaSnapshot>();
-  const pendingRefreshes = new Map<string, ReturnType<typeof setTimeout>>();
   let activeProviderId: string | undefined;
+  let hadCodexActivity = false;
+  let sawCodexHeaders = false;
 
   async function fetchUsage(providerId: string): Promise<CodexQuotaSnapshot | null> {
     const auth = await readCodexAuthRecord(getAuthFilePath(), providerId);
@@ -105,20 +120,6 @@ export default function codexQuotaWidget(pi: ExtensionAPI) {
     showWidget(ctx);
   }
 
-  function scheduleRefreshFromUsage(
-    providerId: string,
-    ctx: ExtensionContext,
-    delayMs = POST_RESPONSE_REFRESH_DELAY_MS,
-  ) {
-    if (pendingRefreshes.has(providerId)) return;
-
-    const timeout = setTimeout(() => {
-      pendingRefreshes.delete(providerId);
-      void refreshFromUsage(providerId, ctx);
-    }, delayMs);
-    pendingRefreshes.set(providerId, timeout);
-  }
-
   pi.on("session_start", async (_event, ctx) => {
     if (!isCodexProviderModel(ctx.model)) {
       activeProviderId = undefined;
@@ -150,26 +151,34 @@ export default function codexQuotaWidget(pi: ExtensionAPI) {
   });
 
   pi.on("after_provider_response", async (event, ctx) => {
-    if (!activeProviderId || !isCodexProvider(activeProviderId)) return;
+    const providerId = getCodexProviderFromContext(activeProviderId, ctx);
+    if (!providerId) return;
+
+    activeProviderId = providerId;
+    hadCodexActivity = true;
+
     const parsed = parseCodexHeaders(
       event.headers as Record<string, string | undefined>,
-      activeProviderId,
+      providerId,
       Date.now(),
     );
-    if (!parsed) {
-      scheduleRefreshFromUsage(activeProviderId, ctx);
-      return;
-    }
-    cache.set(activeProviderId, mergeSnapshots(cache.get(activeProviderId), parsed));
+    if (!parsed) return;
+
+    sawCodexHeaders = true;
+    cache.set(providerId, mergeSnapshots(cache.get(providerId), parsed));
     showWidget(ctx);
-    scheduleRefreshFromUsage(activeProviderId, ctx);
   });
 
-  pi.on("session_shutdown", () => {
-    for (const timeout of pendingRefreshes.values()) {
-      clearTimeout(timeout);
-    }
-    pendingRefreshes.clear();
+  pi.on("agent_end", async (_event, ctx) => {
+    const providerId = getCodexProviderFromContext(activeProviderId, ctx);
+    if (!providerId) return;
+
+    if (!shouldRefreshUsageAfterActivity(hadCodexActivity, sawCodexHeaders)) return;
+
+    hadCodexActivity = false;
+    sawCodexHeaders = false;
+    activeProviderId = providerId;
+    await refreshFromUsage(providerId, ctx);
   });
 
   pi.registerCommand("codex-quota", {
